@@ -1,0 +1,60 @@
+{
+   "kind": "pipeline",
+   "name": "macOS (Static)",
+   "platform": {
+      "arch": "amd64",
+      "os": "darwin"
+   },
+   "steps": [
+      {
+         "commands": [
+            "git fetch --tags",
+            "git submodule update --init --recursive --depth=1"
+         ],
+         "name": "submodules"
+      },
+      {
+         "commands": [
+            "export SDKROOT=\"$(xcrun --sdk macosx --show-sdk-path)\"",
+            "mkdir build",
+            "cd build",
+            "cmake .. -G Ninja -DCMAKE_CXX_FLAGS=-fcolor-diagnostics -DCMAKE_BUILD_TYPE=Release -DLOCAL_MIRROR=https://builds.belnet.dev/deps -DUSE_LTO=ON -DBUILD_STATIC_DEPS=ON -DARCH=core2 -DARCH_ID=amd64",
+            "ninja -j6 -v",
+            "../utils/build_scripts/drone-check-static-libs.sh",
+            "ninja strip_binaries",
+            "ninja create_tarxz",
+            "../utils/build_scripts/drone-static-upload.sh"
+         ],
+         "environment": {
+            "GTEST_FILTER": "-AddressFromURL.Failure:DNSResolver.DNSSEC*",
+            "SSH_KEY": {
+               "from_secret": "SSH_KEY"
+            }
+         },
+         "name": "build"
+      },
+      {
+         "commands": [
+            "git clone https://github.com/beldex-coin/beldex-electron-gui-wallet.git",
+            "cp -v build/bin/{beldexd,beldex-wallet-rpc} beldex-electron-gui-wallet/bin",
+            "cd beldex-electron-gui-wallet",
+            "sed -i -e 's/^\\\\( *\"version\": \".*\\\\)\",/\\\\1-${DRONE_COMMIT_SHA:0:8}\",/' package.json",
+            "npm install",
+            "npm run build",
+            "../utils/build_scripts/drone-wallet-upload.sh"
+         ],
+         "environment": {
+            "CSC_IDENTITY_AUTO_DISCOVERY": "false",
+            "SSH_KEY": {
+               "from_secret": "SSH_KEY"
+            }
+         },
+         "name": "GUI Wallet (dev)",
+         "platform": {
+            "arch": "amd64",
+            "os": "darwin"
+         }
+      }
+   ],
+   "type": "exec"
+}
